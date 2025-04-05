@@ -4,7 +4,5 @@ pydantic
 PyMuPDF
 spacy
 transformers
-smtplib
-email
 python-multipart
 boto3
