@@ -39,3 +39,6 @@ dmypy.json
 
 # Pytest
 .cache/
+
+hhp/
+.env

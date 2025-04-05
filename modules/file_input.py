@@ -1,6 +1,9 @@
 import os
 from typing import Optional, Union, List
 from pathlib import Path
+import boto3
+import json
+from dotenv import load_dotenv
 
 
 class DocumentParser:
@@ -8,6 +11,28 @@ class DocumentParser:
         # Don't initialize any models at startup - will initialize on-demand
         self.ocr_initialized = False
         self.ocr_reader = None
+
+        # Load environment variables
+        load_dotenv()
+
+        # Get S3 configuration
+        self.s3_bucket = os.getenv("S3_BUCKET_NAME")
+        if self.s3_bucket:
+            self.s3_enabled = True
+            self.s3_client = boto3.client(
+                's3',
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                region_name=os.getenv("AWS_REGION", "us-east-1")
+            )
+
+            # Load chatbot configuration if available
+            self.chatbot_config = None
+            if os.path.exists(".chatbot_config"):
+                with open(".chatbot_config", "r") as f:
+                    self.chatbot_config = json.load(f)
+        else:
+            self.s3_enabled = False
 
         # Create temp directory if it doesn't exist
         # Use Path for cross-platform compatibility
@@ -54,23 +79,40 @@ class DocumentParser:
 
     def save_to_temp_file(self, text: str, original_filename: str) -> str:
         """
-        Save extracted text to a file in the temp directory
-
-        Args:
-            text: Extracted text to save
-            original_filename: Name of the original file
-
-        Returns:
-            Path to the saved temp file
+        Save extracted text primarily to S3 for concurrent access
         """
         # Create a unique filename based on the original name and timestamp
         import time
         basename = Path(original_filename).stem
         timestamp = int(time.time())
         temp_filename = f"{basename}_{timestamp}.txt"
-        temp_path = self.temp_dir / temp_filename
 
-        # Write the text to the file
+        # If S3 is enabled and we have chatbot config, save directly to S3 first
+        if self.s3_enabled and self.chatbot_config:
+            s3_key = f"{self.chatbot_config['s3_path']}/texts/{temp_filename}"
+            try:
+                # Save directly to S3 from memory
+                self.s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=s3_key,
+                    Body=text,
+                    ContentType="text/plain"
+                )
+                s3_path = f"s3://{self.s3_bucket}/{s3_key}"
+                print(f"Uploaded text to S3: {s3_path}")
+
+                # Also save locally for backup/debugging
+                temp_path = self.temp_dir / temp_filename
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    f.write(text)
+
+                return s3_path  # Return the S3 path instead of local path
+            except Exception as e:
+                print(f"Error uploading to S3: {str(e)}")
+                # Fall back to local storage on error
+
+        # If S3 not enabled or failed, save locally
+        temp_path = self.temp_dir / temp_filename
         with open(temp_path, 'w', encoding='utf-8') as f:
             f.write(text)
 
