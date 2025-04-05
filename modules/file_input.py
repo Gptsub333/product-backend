@@ -157,11 +157,19 @@ class DocumentParser:
         timestamp = int(time.time())
         temp_filename = f"{basename}_{timestamp}.txt"
 
+        print(f"Saving file {temp_filename}")
+        print(f"S3 enabled: {self.s3_enabled}")
+        print(f"Chatbot config: {self.chatbot_config}")
+
         # If S3 is enabled and we have chatbot config, save directly to S3 first
         if self.s3_enabled and self.chatbot_config:
+            # Use the correct S3 path from the config
             s3_key = f"{self.chatbot_config['s3_path']}/texts/{temp_filename}"
+
             try:
                 # Save directly to S3 from memory
+                print(
+                    f"Attempting to save to S3: s3://{self.s3_bucket}/{s3_key}")
                 self.s3_client.put_object(
                     Bucket=self.s3_bucket,
                     Key=s3_key,
@@ -169,22 +177,25 @@ class DocumentParser:
                     ContentType="text/plain"
                 )
                 s3_path = f"s3://{self.s3_bucket}/{s3_key}"
-                print(f"Uploaded text to S3: {s3_path}")
+                print(f"Successfully uploaded text to S3: {s3_path}")
 
                 # Also save locally for backup/debugging
                 temp_path = self.temp_dir / temp_filename
                 with open(temp_path, 'w', encoding='utf-8') as f:
                     f.write(text)
+                print(f"Also saved locally to {temp_path}")
 
                 return s3_path  # Return the S3 path instead of local path
             except Exception as e:
                 print(f"Error uploading to S3: {str(e)}")
+                print(f"S3 bucket: {self.s3_bucket}")
+                print(f"S3 key: {s3_key}")
                 # Fall back to local storage on error
-
-        # If S3 not enabled or failed, save locally
-        temp_path = self.temp_dir / temp_filename
-        with open(temp_path, 'w', encoding='utf-8') as f:
-            f.write(text)
+        else:
+            # If S3 not enabled or failed, save locally
+            temp_path = self.temp_dir / temp_filename
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                f.write(text)
 
         return str(temp_path)
 

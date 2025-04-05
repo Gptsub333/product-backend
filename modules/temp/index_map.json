@@ -1,0 +1,10 @@
+[
+  {
+    "chunk_id": "research_1743855297",
+    "text_s3_path": "s3://chatbot-automation-hackathon-team-parvez/users/test_user_345/chatbots/test_bot_456/texts/research_1743855297.txt",
+    "embedding_s3_path": "s3://chatbot-automation-hackathon-team-parvez/users/test_user_345/chatbots/test_bot_456/embeddings/research_1743855297_embedding.json",
+    "model_used": "text-embedding-ada-002",
+    "token_count": 4332,
+    "local_embedding_path": "D:\\hackathon\\newpull\\product-backend\\modules\\temp\\embeddings\\research_1743855297_embedding.json"
+  }
+]

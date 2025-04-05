@@ -16,7 +16,9 @@ load_dotenv()
 
 router = APIRouter()
 
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "chatbot-automation-hackathon-team-parvez")
+S3_BUCKET_NAME = os.getenv(
+    "S3_BUCKET_NAME", "chatbot-automation-hackathon-team-parvez")
+
 
 @router.post("/")
 async def query_intent(
@@ -52,7 +54,8 @@ async def query_intent(
         """
 
         # Step 2: Call Claude 3.5 Sonnet via AWS Bedrock
-        bedrock_runtime = boto3.client("bedrock-runtime", region_name="us-east-2")
+        bedrock_runtime = boto3.client(
+            "bedrock-runtime", region_name="us-east-2")
 
         response = bedrock_runtime.invoke_model(
             modelId="us.anthropic.claude-3-5-sonnet-20240620-v1:0",
@@ -123,7 +126,6 @@ async def query_intent(
         )
 
         # Step 6: Upload files to S3 and process them
-        # Inside your if files: block
         if files:
             for file in files:
                 file_key = f"{userId}/{botName}/uploads/{file.filename}"
@@ -132,24 +134,34 @@ async def query_intent(
                 # Wrap content in BytesIO so it has a .read() method
                 file_stream = io.BytesIO(content)
 
+                # Upload to S3
                 s3_client.upload_fileobj(
                     Fileobj=file_stream,
                     Bucket=S3_BUCKET_NAME,
                     Key=file_key
                 )
 
-                # Optional: Call setup.py with the S3 path or any other logic
-                setup_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "setup.py")
-                subprocess.run([
+                # Create proper S3 URL for setup.py
+                s3_url = f"s3://{S3_BUCKET_NAME}/{file_key}"
+
+                # Call setup.py with the S3 URL
+                setup_script = os.path.join(os.path.dirname(
+                    os.path.dirname(__file__)), "setup.py")
+                print(f"Processing file via setup.py: {s3_url}")
+                process = subprocess.run([
                     sys.executable,
                     setup_script,
                     userId,
                     botName,
-                    file_key
-                ])
-                print(f"File processed: {file.filename}")
+                    s3_url  # Use full S3 URL
+                ], capture_output=True, text=True)
+
+                print(f"Setup.py stdout: {process.stdout}")
+                print(f"Setup.py stderr: {process.stderr}")
+                print(f"File processing completed: {file.filename}")
 
         return result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to process: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to process: {str(e)}")

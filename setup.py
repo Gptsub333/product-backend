@@ -39,7 +39,8 @@ class ChatbotManager:
         )
 
         # Local temp directory for processing
-        self.temp_dir = Path("product-backend/modules/temp")
+        script_dir = Path(__file__).parent.absolute()
+        self.temp_dir = script_dir / "modules" / "temp"
         self.temp_dir.mkdir(exist_ok=True, parents=True)
 
         # Initialize parser
@@ -105,21 +106,36 @@ class ChatbotManager:
         """Process a document and upload to S3 for a specific chatbot"""
         # Create chatbot if needed
         chatbot_path = self.create_chatbot(username, chatbot_name)
+        print(f"Created chatbot path: {chatbot_path}")
+
+        # Create chatbot config
+        chatbot_config = {
+            "username": username,
+            "chatbot_name": chatbot_name,
+            "s3_bucket": self.s3_bucket,
+            "s3_path": chatbot_path
+        }
 
         # Save the chatbot path for file_input.py and embedding.py to use
-        with open(".chatbot_config", "w") as f:
-            json.dump({
-                "username": username,
-                "chatbot_name": chatbot_name,
-                "s3_bucket": self.s3_bucket,
-                "s3_path": chatbot_path
-            }, f)
+        config_path = Path(".chatbot_config")
+        print(f"Writing config to: {config_path.absolute()}")
+
+        with open(config_path, "w") as f:
+            json.dump(chatbot_config, f)
+            print(f"Wrote config: {chatbot_config}")
+
+        # IMPORTANT: Explicitly pass the config to the parser
+        self.parser.chatbot_config = chatbot_config
 
         # Parse document - this now saves directly to S3
+        print(f"Parsing document: {file_path}")
         parsed_text = self.parser.parse_document(file_path, save_output=True)
+        print(f"Parsed text result: {parsed_text}")
 
         # Generate embeddings from S3 text files
+        print("Generating embeddings...")
         index_map_path = embedding_module.generate_and_store_embeddings()
+        print(f"Generated index map: {index_map_path}")
 
         # Handle empty return value gracefully
         if not index_map_path:
@@ -318,10 +334,15 @@ def main():
         # If also processing a document
         elif len(sys.argv) == 4:
             file_path = sys.argv[3]
-            if not os.path.exists(file_path):
-                print(f"File not found: {file_path}")
+
+            # Check if it's an S3 URL or local file
+            if file_path.startswith("s3://"):
+                print(f"Processing S3 file: {file_path}")
+            elif not os.path.exists(file_path):
+                print(f"Local file not found: {file_path}")
                 return
 
+            # Process the document
             result = manager.process_document_for_chatbot(
                 username, chatbot_name, file_path)
             print(f"Document processed: {result['document_processed']}")
@@ -330,6 +351,8 @@ def main():
 
     except Exception as e:
         print(f"Error: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Print the full traceback for debugging
 
 
 if __name__ == "__main__":

@@ -72,6 +72,42 @@ def generate_and_store_embeddings(
     # Get the S3 path prefix for text files
     s3_texts_prefix = f"{chatbot_config['s3_path']}/texts/"
 
+    # Check if there's a mismatch between the config and where files are actually saved
+    if 'username' in chatbot_config and chatbot_config['username'] != 'john_doe':
+        # Try the hardcoded path as a fallback
+        fallback_prefix = f"users/john_doe/chatbots/my_research_bot/texts/"
+
+        # List objects using fallback path
+        fallback_response = s3_client.list_objects_v2(
+            Bucket=s3_bucket,
+            Prefix=fallback_prefix
+        )
+
+        # If files exist in the fallback location but not in the configured location
+        if ('Contents' in fallback_response and
+                ('Contents' not in s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=s3_texts_prefix))):
+
+            print(
+                f"Warning: Found text files in incorrect location: {fallback_prefix}")
+            print(
+                f"Will process those instead of looking in: {s3_texts_prefix}")
+
+            # Copy files to the correct location
+            for item in fallback_response['Contents']:
+                src_key = item['Key']
+                if src_key.endswith('.txt'):
+                    dest_key = f"{s3_texts_prefix}{os.path.basename(src_key)}"
+                    print(f"Copying {src_key} to {dest_key}")
+
+                    # Copy the object to the correct location
+                    s3_client.copy_object(
+                        CopySource={'Bucket': s3_bucket, 'Key': src_key},
+                        Bucket=s3_bucket,
+                        Key=dest_key
+                    )
+
+            # Now that files are copied, continue with the original path
+
     # List all text files in the S3 path
     try:
         response = s3_client.list_objects_v2(
