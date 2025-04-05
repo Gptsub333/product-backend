@@ -1,8 +1,8 @@
 # chatbot_manager.py (place in root directory)
 
 # import .modules.embedding as embedding_module
-from .modules import embedding as embedding_module
-from .modules.file_input import DocumentParser
+from modules.file_input import DocumentParser
+from modules import embedding as embedding_module
 import os
 import boto3
 import json
@@ -13,8 +13,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 from dotenv import load_dotenv
 
-# Adjust the Python path to include the parent directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the current directory to the Python path
+current_dir = Path(__file__).parent.absolute()
+sys.path.append(str(current_dir))
+
+# Now use absolute imports
 
 
 class ChatbotManager:

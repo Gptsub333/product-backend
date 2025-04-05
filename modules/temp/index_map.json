@@ -1,9 +1,0 @@
-[
-  {
-    "chunk_id": "research_1743834926",
-    "embedding_path": "d:\\hackathon\\product-backend\\modules\\temp\\embeddings\\research_1743834926_embedding.json",
-    "model_used": "text-embedding-ada-002",
-    "token_count": 4332,
-    "original_file": "research_1743834926.txt"
-  }
-]
