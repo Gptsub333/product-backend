@@ -8,6 +8,13 @@ import subprocess
 import sys
 import os
 from dotenv import load_dotenv
+from typing import Optional
+from fastapi import UploadFile, File
+from fastapi.responses import JSONResponse
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends
+from typing import List
 
 # Load environment variables
 load_dotenv()
@@ -33,7 +40,7 @@ class IntentRequestData(BaseModel):
     urls: str = None
     faqs: str = None
     avatarColor: str = None
-    files: list = None
+    files: Optional[List[str]] = None 
     intents: list = None
     text: str = None  # Added for backward compatibility
 
