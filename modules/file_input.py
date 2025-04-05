@@ -1,5 +1,6 @@
 import os
-from typing import Optional, Union, List
+import tempfile
+from typing import Optional, Union, List, Tuple
 from pathlib import Path
 import boto3
 import json
@@ -41,15 +42,84 @@ class DocumentParser:
 
     def parse_document(self, file_path: str, save_output: bool = False) -> str:
         """
-        Parse text from various document formats
+        Parse text from various document formats (local or S3)
 
         Args:
-            file_path: Path to the document file
-            save_output: Whether to save output to temp file
+            file_path: Path to the document file (local path or s3:// URL)
+            save_output: Whether to save output to temp file and S3
 
         Returns:
             Extracted text from the document
         """
+        # Check if file_path is an S3 URL
+        if file_path.startswith("s3://"):
+            # Extract bucket and key
+            bucket, key = self._parse_s3_uri(file_path)
+            # Download temp file and return path
+            local_path = self._download_from_s3(bucket, key)
+            try:
+                # Process the temp file
+                text = self._process_local_file(local_path)
+                # Clean up
+                os.unlink(local_path)
+                # Save if requested
+                if save_output:
+                    return self.save_to_temp_file(text, os.path.basename(key))
+                return text
+            except Exception as e:
+                # Clean up on error
+                if os.path.exists(local_path):
+                    os.unlink(local_path)
+                raise e
+        else:
+            # Process local file
+            return self._process_local_file(file_path, save_output)
+
+    def _parse_s3_uri(self, s3_uri: str) -> Tuple[str, str]:
+        """Parse an S3 URI into bucket and key"""
+        if not s3_uri.startswith("s3://"):
+            raise ValueError(f"Invalid S3 URI: {s3_uri}")
+
+        # Remove s3:// prefix
+        s3_path = s3_uri[5:]
+
+        # Split into bucket and key
+        parts = s3_path.split('/', 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid S3 URI format: {s3_uri}")
+
+        bucket = parts[0]
+        key = parts[1]
+
+        return bucket, key
+
+    def _download_from_s3(self, bucket: str, key: str) -> str:
+        """Download file from S3 to a temporary location"""
+        # Get file extension for temp file
+        _, extension = os.path.splitext(key)
+
+        # Create a temp file with the same extension
+        temp_file = tempfile.NamedTemporaryFile(suffix=extension, delete=False)
+        temp_path = temp_file.name
+        temp_file.close()
+
+        try:
+            # Download the file from S3
+            print(f"Downloading s3://{bucket}/{key} to {temp_path}")
+            self.s3_client.download_file(
+                Bucket=bucket,
+                Key=key,
+                Filename=temp_path
+            )
+            return temp_path
+        except Exception as e:
+            # Clean up the temp file if download fails
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise Exception(f"Error downloading from S3: {str(e)}")
+
+    def _process_local_file(self, file_path: str, save_output: bool = False) -> str:
+        """Process a local file and extract text"""
         # Convert to Path object for cross-platform handling
         file_path = Path(file_path)
 
@@ -73,7 +143,7 @@ class DocumentParser:
 
         # Save to temp file if requested
         if save_output:
-            self.save_to_temp_file(text, file_path.name)
+            return self.save_to_temp_file(text, file_path.name)
 
         return text
 
@@ -198,8 +268,13 @@ if __name__ == "__main__":
             print(text[:500] + "..." if len(text) >
                   500 else text)  # Show preview of text
             print("-" * 50)
-            print(f"Full text saved to temp directory")
+
+            # Show where the output was saved
+            if file_path.startswith("s3://") or (text and text.startswith("s3://")):
+                print(f"Full text saved to S3")
+            else:
+                print(f"Full text saved to temp directory")
         except Exception as e:
             print(f"Error: {str(e)}")
     else:
-        print("Usage: python document_parser.py <file_path>")
+        print("Usage: python document_parser.py <file_path or s3://bucket/key>")
