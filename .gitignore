@@ -1,0 +1,41 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.db
+
+# FastAPI
+*.sqlite3
+*.log
+
+# Virtual environment
+.env/
+.venv/
+env/
+venv/
+
+# IDEs
+.vscode/
+.idea/
+
+# Python egg files
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Testing
+.coverage
+*.cover
+nosetests.xml
+coverage.xml
+*.hypothesis/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pytest
+.cache/
