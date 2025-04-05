@@ -1,19 +1,28 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 import json
 import boto3
+from datetime import datetime
+import uuid
 
 router = APIRouter()
 
-# Adjust the request model to reflect the new structure
+# Adjust the request model to reflect the complete structure
 class IntentRequestData(BaseModel):
-    chatbot_name: str
-    bot_purpose: str
-    bot_tone: str
-    text: str
+    userId: str
+    botName: str
+    botPurpose: str
+    botTone: str
+    prompt: str
+    urls: str = None
+    faqs: str = None
+    avatarColor: str = None
+    files: list = None
+    intents: list = None
+    text: str = None  # Added for backward compatibility
 
 @router.post("/")
-async def query_intent(request_data: IntentRequestData):
+async def query_intent(request_data: IntentRequestData, request: Request):
     input_data = request_data.dict()
     
     # Extract chatbot information from the input data
@@ -21,10 +30,10 @@ async def query_intent(request_data: IntentRequestData):
     Extract the chatbot name, purpose, and tone from the following text, then generate 3 relevant questions a user might ask this chatbot.
     For each question, identify the primary user intent and any key entities.
     
-    Chatbot name: {input_data['chatbot_name']}
-    Purpose: {input_data['bot_purpose']}
-    Tone: {input_data['bot_tone']}
-    Text: {input_data['text']}
+    Chatbot name: {input_data['botName']}
+    Purpose: {input_data['botPurpose']}
+    Tone: {input_data['botTone']}
+    Additional context: {input_data['prompt']}
     
     Format your response as a JSON object with:
     1. chatbot_info: extracted name, purpose, and tone
@@ -70,11 +79,53 @@ async def query_intent(request_data: IntentRequestData):
             else:
                 raise ValueError("Unable to extract JSON from response")
         
-        # Return the formatted questions with intent and entity information
+        # Format the response in the desired JSON structure
+        intents_data = []
         if "questions" in parsed_output:
-            return {"questions": parsed_output["questions"], "chatbot_info": parsed_output["chatbot_info"]}
-        else:
-            return parsed_output
+            for question in parsed_output["questions"]:
+                intent_item = {
+                    "userMessage": question["user_message"],
+                    "intent": question["intent"],
+                }
+                
+                # Add entities if they exist
+                if "entity" in question and question["entity"]:
+                    for entity_key, entity_value in question["entity"].items():
+                        intent_item["entityName"] = entity_key
+                        intent_item["entityValue"] = entity_value
+                        break  # Just take the first entity for simplicity
+                
+                intents_data.append(intent_item)
+        
+        result = {
+            "userId": input_data["userId"],
+            "botName": input_data["botName"],
+            "botPurpose": input_data["botPurpose"],
+            "botTone": input_data["botTone"],
+            "prompt": input_data["prompt"],
+            "urls": input_data.get("urls"),
+            "faqs": input_data.get("faqs"),
+            "avatarColor": input_data.get("avatarColor"),
+            "files": input_data.get("files"),
+            "intents": intents_data
+        }
+        
+        # Store in S3
+        s3_client = boto3.client('s3')
+        bucket_name = 'chatbot-automation-hackathon-team-parvez'  # Replace with your actual bucket name
+        
+        # Create the path structure: user_id/chatbot_name/response.json
+        file_key = f"{input_data['userId']}/{input_data['botName']}/response.json"
+        
+        # Save the result to S3
+        s3_client.put_object(
+            Body=json.dumps(result, indent=2),
+            Bucket=bucket_name,
+            Key=file_key,
+            ContentType='application/json'
+        )
+        
+        return result
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process: {str(e)}")
