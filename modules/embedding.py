@@ -73,9 +73,9 @@ def generate_and_store_embeddings(
     s3_texts_prefix = f"{chatbot_config['s3_path']}/texts/"
 
     # Check if there's a mismatch between the config and where files are actually saved
-    if 'username' in chatbot_config and chatbot_config['username'] != 'john_doe':
+    if 'username' in chatbot_config:
         # Try the hardcoded path as a fallback
-        fallback_prefix = f"users/john_doe/chatbots/my_research_bot/texts/"
+        fallback_prefix = f"users/{chatbot_config['username']}/chatbots/{chatbot_config['chatbot_name']}/texts/"
 
         # List objects using fallback path
         fallback_response = s3_client.list_objects_v2(
@@ -105,8 +105,6 @@ def generate_and_store_embeddings(
                         Bucket=s3_bucket,
                         Key=dest_key
                     )
-
-            # Now that files are copied, continue with the original path
 
     # List all text files in the S3 path
     try:
@@ -165,7 +163,7 @@ def generate_and_store_embeddings(
                     }
 
                     # Define S3 path for this embedding
-                    s3_embedding_key = f"{chatbot_config['s3_path']}/embeddings/{chunk_id}_embedding.json"
+                    s3_embedding_key = f"{chatbot_config['s3_path']}/embeddings/embedding_data.json"
 
                     # Upload embedding directly to S3
                     s3_client.put_object(
@@ -176,8 +174,7 @@ def generate_and_store_embeddings(
                     )
 
                     # Optionally save locally for backup/debugging
-                    local_embedding_path = embeddings_dir / \
-                        f"{chunk_id}_embedding.json"
+                    local_embedding_path = embeddings_dir / "embedding_data.json"
                     with open(local_embedding_path, 'w', encoding='utf-8') as f:
                         json.dump(embedding_data, f,
                                   ensure_ascii=False, indent=2)
@@ -193,6 +190,11 @@ def generate_and_store_embeddings(
                     })
 
                     print(f"Processed and stored embedding for {chunk_id}")
+                    print(
+                        f"Embedding stored at S3 location: s3://{s3_bucket}/{s3_embedding_key}")
+                    print(f"Local embedding path: {local_embedding_path}")
+                    print(
+                        f"This embedding will be retrieved using chunk_id: {chunk_id}")
 
             except Exception as e:
                 print(f"Error processing S3 file {s3_key}: {str(e)}")

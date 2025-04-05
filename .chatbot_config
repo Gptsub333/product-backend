@@ -1,1 +1,1 @@
-{"username": "test_user_345", "chatbot_name": "test_bot_456", "s3_bucket": "chatbot-automation-hackathon-team-parvez", "s3_path": "users/test_user_345/chatbots/test_bot_456"}
+{"username": "final3", "chatbot_name": "chatbot1", "s3_bucket": "chatbot-automation-hackathon-team-parvez", "s3_path": "final3/chatbot1"}

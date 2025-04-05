@@ -49,10 +49,10 @@ class ChatbotManager:
     def user_exists(self, username: str) -> bool:
         """Check if a user already exists in S3 bucket"""
         try:
-            # Check if user directory exists in S3
+            # Check if user directory exists in S3 - simplified path
             response = self.s3_client.list_objects_v2(
                 Bucket=self.s3_bucket,
-                Prefix=f"users/{username}/",
+                Prefix=f"{username}/",  # Removed "users/"
                 MaxKeys=1
             )
             return 'Contents' in response
@@ -63,10 +63,10 @@ class ChatbotManager:
     def create_user(self, username: str) -> bool:
         """Create a new user directory in S3"""
         try:
-            # Create empty placeholder file to represent user directory
+            # Create empty placeholder file to represent user directory - simplified path
             self.s3_client.put_object(
                 Bucket=self.s3_bucket,
-                Key=f"users/{username}/.metadata",
+                Key=f"{username}/.metadata",  # Removed "users/"
                 Body=json.dumps({
                     "created_at": str(datetime.datetime.now()),
                     "username": username
@@ -85,8 +85,9 @@ class ChatbotManager:
             if not self.create_user(username):
                 raise Exception(f"Failed to create user: {username}")
 
-        # Create chatbot directory in S3
-        chatbot_path = f"users/{username}/chatbots/{chatbot_name}"
+        # Create chatbot directory in S3 - simplified path
+        # Removed "users/" and "chatbots/"
+        chatbot_path = f"{username}/{chatbot_name}"
         try:
             self.s3_client.put_object(
                 Bucket=self.s3_bucket,
@@ -172,7 +173,9 @@ class ChatbotManager:
 
     def get_chatbot_data(self, username: str, chatbot_name: str) -> Dict:
         """Get chatbot data from S3"""
-        chatbot_path = f"users/{username}/chatbots/{chatbot_name}"
+        # Simplified path
+        # Removed "users/" and "chatbots/"
+        chatbot_path = f"{username}/{chatbot_name}"
 
         try:
             # Get index map
