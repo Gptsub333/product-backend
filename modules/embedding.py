@@ -162,8 +162,9 @@ def generate_and_store_embeddings(
                         "source_s3_path": f"s3://{s3_bucket}/{s3_key}"
                     }
 
-                    # Define S3 path for this embedding
-                    s3_embedding_key = f"{chatbot_config['s3_path']}/embeddings/embedding_data.json"
+                    # Define S3 path for this embedding - use a folder per document
+                    doc_folder = chunk_id  # Create a folder based on the document ID
+                    s3_embedding_key = f"{chatbot_config['s3_path']}/embeddings/{doc_folder}/embedding_data.json"
 
                     # Upload embedding directly to S3
                     s3_client.put_object(
@@ -173,8 +174,10 @@ def generate_and_store_embeddings(
                         ContentType="application/json"
                     )
 
-                    # Optionally save locally for backup/debugging
-                    local_embedding_path = embeddings_dir / "embedding_data.json"
+                    # Optionally save locally for backup/debugging - create doc-specific folder
+                    doc_embedding_dir = embeddings_dir / doc_folder
+                    doc_embedding_dir.mkdir(exist_ok=True)
+                    local_embedding_path = doc_embedding_dir / "embedding_data.json"
                     with open(local_embedding_path, 'w', encoding='utf-8') as f:
                         json.dump(embedding_data, f,
                                   ensure_ascii=False, indent=2)
