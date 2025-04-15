@@ -1,127 +1,155 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, List
 import boto3
+import traceback
 import json
 import os
 from dotenv import load_dotenv
+from modules.vector_search import VectorSearch
 
 # Load environment variables
 load_dotenv()
 
-# Initialize S3 client
-s3_client = boto3.client(
-    's3',
+router = APIRouter()
+
+# Initialize Bedrock client with specific configuration
+bedrock = boto3.client(
+    service_name='bedrock-runtime',
+    region_name="us-east-2",
     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name=os.getenv("AWS_REGION", "us-east-1")
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
 )
 
-# Initialize Bedrock client
-bedrock = boto3.client("bedrock-runtime", region_name="us-east-2")
 
-router = APIRouter()
+class ContentSource(BaseModel):
+    type: str
+    media_type: str = None
+    data: str = None
+
+
+class ContentItem(BaseModel):
+    type: str
+    text: str = None
+    source: ContentSource = None
+
+
+class Message(BaseModel):
+    role: str
+    content: List[ContentItem]
 
 
 class DirectChatRequest(BaseModel):
     userId: str
     chatbotName: str
-    llm: str = "claude_3_5_sonnet"
+    llm: str
     text: str
 
 
 @router.post("/")
-async def direct_chat(request_data: DirectChatRequest):
-    """Direct chat that fetches the paper text and sends it with the question"""
-    user_id = request_data.userId
-    bot_name = request_data.chatbotName
-    query = request_data.text
-
-    # Define available LLM models
-    LLM_MODELS = {
-        "claude_3_5_sonnet": "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
-        "claude_3_5_sonnet_v2": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-        "nova_lite": "us.amazon.nova-lite-v1:0",
-        "nova_pro": "us.amazon.nova-pro-v1:0"
-    }
-    model_id = LLM_MODELS.get(
-        request_data.llm, LLM_MODELS["claude_3_5_sonnet"])
-
-    # Get S3 bucket name
-    s3_bucket = os.getenv("S3_BUCKET_NAME")
-    if not s3_bucket:
-        raise HTTPException(
-            status_code=500, detail="S3_BUCKET_NAME not found in environment variables")
-
+async def direct_chat(request: DirectChatRequest):
+    """Chat using RAG with semantic search"""
     try:
-        # Try different possible locations for text files
-        paper_text = ""
-        possible_paths = [
-            f"{user_id}/{bot_name}/texts/",
-            f"users/{user_id}/chatbots/{bot_name}/texts/"
+        # Initialize Bedrock client with the correct region
+        bedrock = boto3.client(
+            service_name='bedrock-runtime',
+            region_name="us-west-2",  # Make sure this matches your model's region
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
+        )
+
+        # Get relevant chunks
+        vector_search = VectorSearch()
+        similar_chunks = vector_search.search_similar_chunks(
+            request.text, request.userId, request.chatbotName)
+
+        # Prepare context from chunks
+        if similar_chunks:
+            context = "\n\n".join([chunk['text'] for chunk in similar_chunks])
+            print(f"Using context from {len(similar_chunks)} chunks")
+        else:
+            print("No relevant context found")
+            return {"response": "I couldn't find relevant information to answer your question. Please try rephrasing or ask another question."}
+
+        # Prepare the messages in the correct format
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            f"Answer this question about a research paper using ONLY the provided context. "
+                            f"If you can't fully answer from the context, say what you can and note what's missing.\n\n"
+                            f"Question: {request.text}\n\n"
+                            f"Context from paper:\n{context}"
+                        )
+                    }
+                ]
+            }
         ]
 
-        for prefix in possible_paths:
-            try:
-                # List objects in this path
-                response = s3_client.list_objects_v2(
-                    Bucket=s3_bucket,
-                    Prefix=prefix
-                )
+        # Make the API call - removed inferenceProfile parameter
+        try:
+            print(
+                f"Making Bedrock API call to model: anthropic.claude-3-5-sonnet-20240620-v1:0")
+            response = bedrock.invoke_model(
+                modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 1000,
+                    "messages": messages
+                }),
+                contentType="application/json",
+                accept="application/json"
+            )
 
-                # If we found files
-                if 'Contents' in response:
-                    print(f"Found text files in {prefix}")
+            response_body = json.loads(response.get('body').read())
+            return {"response": response_body.get('content')[0].get('text', '').strip()}
 
-                    # Process each text file
-                    for item in response['Contents']:
-                        if item['Key'].endswith('.txt'):
-                            s3_response = s3_client.get_object(
-                                Bucket=s3_bucket, Key=item['Key'])
-                            paper_text += s3_response['Body'].read().decode(
-                                'utf-8') + "\n\n"
+        except bedrock.exceptions.ValidationException as ve:
+            print(f"Bedrock validation error: {str(ve)}")
+            return {"error": "There was an issue with the model configuration. Please check your model access."}
 
-                    # If we found content, stop looking
-                    if paper_text:
-                        break
-            except Exception as e:
-                print(f"Error checking path {prefix}: {str(e)}")
-                continue
-
-        if not paper_text:
-            return {"response": "I couldn't find any paper content to analyze. Please make sure a document has been uploaded."}
-
-        # Trim if it's too long (Claude has a context window limit)
-        if len(paper_text) > 150000:
-            paper_text = paper_text[:150000] + "...(truncated)"
-
-        # Prepare prompt with paper text
-        prompt = (
-            f"I have a research paper with the following content. Please answer the question based on this paper.\n\n"
-            f"PAPER CONTENT:\n{paper_text}\n\n"
-            f"QUESTION: {query}\n\n"
-            f"Please provide a detailed and accurate answer based only on the information in the paper. "
-            f"If the answer is not found in the paper content, please indicate that."
-        )
-
-        # Call Bedrock
-        payload = {
-            "anthropic_version": "bedrock-2023-05-31",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 1000,
-            "temperature": 0.2  # Lower temperature for more factual responses
-        }
-
-        response = bedrock.invoke_model(
-            modelId=model_id,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps(payload)
-        )
-        data = json.loads(response["body"].read())
-        return {"response": data["content"][0]["text"].strip()}
+        except Exception as e:
+            print(f"Bedrock API error: {str(e)}")
+            return {"error": "There was an error processing your request. Please try again later."}
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        print(f"Error in direct_chat:\n{traceback.format_exc()}")
+        return {"error": str(e)}
+
+
+@router.get("/verify/{user_id}/{bot_name}")
+async def verify_knowledge_base(user_id: str, bot_name: str):
+    """Verify the knowledge base exists and is accessible"""
+    try:
+        s3_client = boto3.client('s3')
+
+        # Check for uploaded files
+        uploads_path = f"{user_id}/{bot_name}/uploads/"
+        upload_response = s3_client.list_objects_v2(
+            Bucket=os.getenv("S3_BUCKET_NAME"),
+            Prefix=uploads_path
+        )
+
+        # Check for embeddings
+        embeddings_path = f"{user_id}/{bot_name}/embeddings/"
+        embedding_response = s3_client.list_objects_v2(
+            Bucket=os.getenv("S3_BUCKET_NAME"),
+            Prefix=embeddings_path
+        )
+
+        return {
+            "uploads": {
+                "path": uploads_path,
+                "files": [obj['Key'] for obj in upload_response.get('Contents', [])]
+            },
+            "embeddings": {
+                "path": embeddings_path,
+                "files": [obj['Key'] for obj in embedding_response.get('Contents', [])]
+            }
+        }
+
+    except Exception as e:
         return {"error": str(e)}

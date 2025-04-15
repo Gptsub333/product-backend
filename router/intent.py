@@ -10,6 +10,7 @@ import subprocess
 import sys
 from dotenv import load_dotenv
 import io
+from modules.embedding import generate_and_store_embeddings
 
 # Load environment variables
 load_dotenv()
@@ -128,37 +129,78 @@ async def query_intent(
         # Step 6: Upload files to S3 and process them
         if files:
             for file in files:
-                file_key = f"{userId}/{botName}/uploads/{file.filename}"
-                content = await file.read()
+                try:
+                    file_key = f"{userId}/{botName}/uploads/{file.filename}"
+                    content = await file.read()
 
-                # Wrap content in BytesIO so it has a .read() method
-                file_stream = io.BytesIO(content)
+                    print(f"Processing file: {file.filename}")
+                    print(f"Uploading to S3: {file_key}")
 
-                # Upload to S3
-                s3_client.upload_fileobj(
-                    Fileobj=file_stream,
-                    Bucket=S3_BUCKET_NAME,
-                    Key=file_key
-                )
+                    # Upload to S3
+                    s3_client.upload_fileobj(
+                        Fileobj=io.BytesIO(content),
+                        Bucket=S3_BUCKET_NAME,
+                        Key=file_key
+                    )
 
-                # Create proper S3 URL for setup.py
-                s3_url = f"s3://{S3_BUCKET_NAME}/{file_key}"
+                    # Verify file was uploaded
+                    try:
+                        s3_client.head_object(
+                            Bucket=S3_BUCKET_NAME, Key=file_key)
+                        print(f"Successfully uploaded file to S3: {file_key}")
+                    except Exception as e:
+                        print(f"Failed to verify S3 upload: {str(e)}")
 
-                # Call setup.py with the S3 URL
-                setup_script = os.path.join(os.path.dirname(
-                    os.path.dirname(__file__)), "setup.py")
-                print(f"Processing file via setup.py: {s3_url}")
-                process = subprocess.run([
-                    sys.executable,
-                    setup_script,
-                    userId,
-                    botName,
-                    s3_url  # Use full S3 URL
-                ], capture_output=True, text=True)
+                    # Create proper S3 URL for setup.py
+                    s3_url = f"s3://{S3_BUCKET_NAME}/{file_key}"
 
-                print(f"Setup.py stdout: {process.stdout}")
-                print(f"Setup.py stderr: {process.stderr}")
-                print(f"File processing completed: {file.filename}")
+                    # Call setup.py with the S3 URL
+                    setup_script = os.path.join(os.path.dirname(
+                        os.path.dirname(__file__)), "setup.py")
+                    print(f"Processing file via setup.py: {s3_url}")
+
+                    process = subprocess.run([
+                        sys.executable,
+                        setup_script,
+                        userId,
+                        botName,
+                        s3_url
+                    ], capture_output=True, text=True)
+
+                    print(f"Setup.py stdout: {process.stdout}")
+                    print(f"Setup.py stderr: {process.stderr}")
+
+                    # Generate embeddings with detailed logging
+                    print("Starting embedding generation...")
+                    try:
+                        config_data = {
+                            "userId": userId,
+                            "botName": botName,
+                            "s3_path": f"{userId}/{botName}"
+                        }
+
+                        with open(".chatbot_config", "w") as f:
+                            json.dump(config_data, f)
+
+                        index_map_path = generate_and_store_embeddings()
+                        print(
+                            f"Embeddings generated and stored at: {index_map_path}")
+
+                        # Verify embeddings exist
+                        try:
+                            s3_client.list_objects_v2(
+                                Bucket=S3_BUCKET_NAME,
+                                Prefix=f"{userId}/{botName}/embeddings/"
+                            )
+                            print("Embeddings verified in S3")
+                        except Exception as e:
+                            print(f"Failed to verify embeddings: {str(e)}")
+
+                    except Exception as e:
+                        print(f"Error generating embeddings: {str(e)}")
+
+                except Exception as e:
+                    print(f"Error processing file {file.filename}: {str(e)}")
 
         return result
 

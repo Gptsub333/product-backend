@@ -43,3 +43,5 @@ dmypy.json
 hhp/
 .env
 temp.py
+modules/temp
+.chatbot_config

@@ -1,28 +1,20 @@
 import json
 import os
 import tiktoken
-import openai
 import boto3
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from pathlib import Path
+from .text_chunking import TextChunker
 
 
 def generate_and_store_embeddings(
     chatbot_config_path: str = ".chatbot_config",
     temp_dir: str = None
 ) -> str:
-    """
-    Generate embeddings for document chunks from S3 and store back to S3
-    """
+    """Generate embeddings for document chunks and store in S3"""
     # Load environment variables
     load_dotenv()
-
-    # Initialize OpenAI client
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        raise ValueError("API key for OpenAI not found in .env file")
-    openai.api_key = openai_api_key
 
     # Get S3 configuration
     s3_bucket = os.getenv("S3_BUCKET_NAME")
@@ -34,7 +26,7 @@ def generate_and_store_embeddings(
         's3',
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION", "us-east-1")
+        region_name=os.getenv("AWS_REGION", "ap-south-1")
     )
 
     # Load chatbot configuration
@@ -45,68 +37,42 @@ def generate_and_store_embeddings(
         raise ValueError(
             f"Chatbot configuration file {chatbot_config_path} not found")
 
-    # Set the temp directory if provided
+    # Set the temp directory
     if temp_dir is None:
         temp_dir = Path(os.path.dirname(__file__)) / "temp"
     else:
         temp_dir = Path(temp_dir)
     temp_dir.mkdir(exist_ok=True)
 
-    # Create embeddings directory
     embeddings_dir = temp_dir / "embeddings"
     embeddings_dir.mkdir(exist_ok=True)
 
-    # Initialize tokenizer for counting tokens
-    cl_tokenizer = tiktoken.get_encoding("cl100k_base")
-
-    # Define models and their token limits
-    models = {
-        "small": {"name": "text-embedding-3-small", "max_tokens": 8191, "dimension": 1536},
-        "large": {"name": "text-embedding-3-large", "max_tokens": 8191, "dimension": 3072},
-        "ada": {"name": "text-embedding-ada-002", "max_tokens": 8191, "dimension": 1536}
-    }
-
-    # Create index map
+    # Smaller chunks for better retrieval
+    chunker = TextChunker(chunk_size=500)
     index_map = []
 
-    # Get the S3 path prefix for text files
     s3_texts_prefix = f"{chatbot_config['s3_path']}/texts/"
 
-    # Check if there's a mismatch between the config and where files are actually saved
     if 'username' in chatbot_config:
-        # Try the hardcoded path as a fallback
         fallback_prefix = f"users/{chatbot_config['username']}/chatbots/{chatbot_config['chatbot_name']}/texts/"
-
-        # List objects using fallback path
         fallback_response = s3_client.list_objects_v2(
-            Bucket=s3_bucket,
-            Prefix=fallback_prefix
-        )
+            Bucket=s3_bucket, Prefix=fallback_prefix)
 
-        # If files exist in the fallback location but not in the configured location
         if ('Contents' in fallback_response and
                 ('Contents' not in s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=s3_texts_prefix))):
-
             print(
-                f"Warning: Found text files in incorrect location: {fallback_prefix}")
-            print(
-                f"Will process those instead of looking in: {s3_texts_prefix}")
-
-            # Copy files to the correct location
+                f"Warning: Found text files in fallback location: {fallback_prefix}")
             for item in fallback_response['Contents']:
                 src_key = item['Key']
                 if src_key.endswith('.txt'):
                     dest_key = f"{s3_texts_prefix}{os.path.basename(src_key)}"
                     print(f"Copying {src_key} to {dest_key}")
-
-                    # Copy the object to the correct location
                     s3_client.copy_object(
                         CopySource={'Bucket': s3_bucket, 'Key': src_key},
                         Bucket=s3_bucket,
                         Key=dest_key
                     )
 
-    # List all text files in the S3 path
     try:
         response = s3_client.list_objects_v2(
             Bucket=s3_bucket,
@@ -114,162 +80,131 @@ def generate_and_store_embeddings(
         )
 
         if 'Contents' not in response:
-            print(
-                f"No text files found in S3 at s3://{s3_bucket}/{s3_texts_prefix}")
+            print(f"No text files found in S3")
             return None
 
-        # Process each text file directly from S3
         for item in response['Contents']:
             s3_key = item['Key']
-            filename = os.path.basename(s3_key)
-
-            if not filename.endswith('.txt'):
+            if not s3_key.endswith('.txt'):
                 continue
 
             print(f"Processing S3 file: s3://{s3_bucket}/{s3_key}")
 
-            # Download text content from S3
-            try:
-                s3_response = s3_client.get_object(
-                    Bucket=s3_bucket, Key=s3_key)
-                text = s3_response['Body'].read().decode('utf-8')
+            # Get text content
+            s3_response = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
+            text = s3_response['Body'].read().decode('utf-8')
 
-                # Create a chunk ID from the filename (without extension)
-                chunk_id = Path(filename).stem
+            # Split into chunks
+            chunks = chunker.split_text(text)
+            print(f"Split document into {len(chunks)} chunks")
 
-                # Count tokens
-                token_count = len(cl_tokenizer.encode(text))
-
-                # Select appropriate model
-                selected_model = select_model_for_chunk(token_count)
+            # Process each chunk
+            for i, chunk in enumerate(chunks):
+                chunk_id = f"{Path(s3_key).stem}_chunk_{i}"
 
                 # Generate embedding
                 embedding = generate_embedding(
-                    text=text,
-                    model_name=models[selected_model]["name"],
-                    openai_client=openai
+                    text=chunk['text'],
+                    model_name="amazon.titan-embed-text-v2:0"
                 )
 
                 if embedding:
-                    # Prepare data for storage
-                    embedding_data = {
+                    # Store chunk data
+                    chunk_data = {
                         "chunk_id": chunk_id,
-                        "chunk_text": text,
-                        "model_used": models[selected_model]["name"],
+                        "chunk_text": chunk['text'],
                         "embedding": embedding,
-                        "token_count": token_count,
-                        "original_file": filename,
-                        "source_s3_path": f"s3://{s3_bucket}/{s3_key}"
+                        "token_count": chunk['token_count'],
+                        "source_file": s3_key,
+                        "chunk_index": i
                     }
 
-                    # Define S3 path for this embedding - use a folder per document
-                    doc_folder = chunk_id  # Create a folder based on the document ID
-                    s3_embedding_key = f"{chatbot_config['s3_path']}/embeddings/{doc_folder}/embedding_data.json"
-
-                    # Upload embedding directly to S3
+                    # Save chunk data to S3
+                    s3_chunk_key = f"{chatbot_config['s3_path']}/embeddings/{chunk_id}.json"
                     s3_client.put_object(
                         Bucket=s3_bucket,
-                        Key=s3_embedding_key,
-                        Body=json.dumps(embedding_data, ensure_ascii=False),
+                        Key=s3_chunk_key,
+                        Body=json.dumps(chunk_data),
                         ContentType="application/json"
                     )
-
-                    # Optionally save locally for backup/debugging - create doc-specific folder
-                    doc_embedding_dir = embeddings_dir / doc_folder
-                    doc_embedding_dir.mkdir(exist_ok=True)
-                    local_embedding_path = doc_embedding_dir / "embedding_data.json"
-                    with open(local_embedding_path, 'w', encoding='utf-8') as f:
-                        json.dump(embedding_data, f,
-                                  ensure_ascii=False, indent=2)
 
                     # Add to index map
                     index_map.append({
                         "chunk_id": chunk_id,
-                        "text_s3_path": f"s3://{s3_bucket}/{s3_key}",
-                        "embedding_s3_path": f"s3://{s3_bucket}/{s3_embedding_key}",
-                        "model_used": models[selected_model]["name"],
-                        "token_count": token_count,
-                        "local_embedding_path": str(local_embedding_path) if local_embedding_path.exists() else None
+                        "source_file": s3_key,
+                        "chunk_index": i,
+                        "token_count": chunk['token_count'],
+                        "s3_path": f"s3://{s3_bucket}/{s3_chunk_key}"
                     })
 
-                    print(f"Processed and stored embedding for {chunk_id}")
                     print(
-                        f"Embedding stored at S3 location: s3://{s3_bucket}/{s3_embedding_key}")
-                    print(f"Local embedding path: {local_embedding_path}")
-                    print(
-                        f"This embedding will be retrieved using chunk_id: {chunk_id}")
+                        f"Processed chunk {i+1}/{len(chunks)} for {chunk_id}")
 
-            except Exception as e:
-                print(f"Error processing S3 file {s3_key}: {str(e)}")
-                continue
-
-        # Save index map to S3
+        # Save index map
         s3_index_key = f"{chatbot_config['s3_path']}/index_map.json"
         s3_client.put_object(
             Bucket=s3_bucket,
             Key=s3_index_key,
-            Body=json.dumps(index_map, ensure_ascii=False),
+            Body=json.dumps(index_map),
             ContentType="application/json"
         )
 
-        # Also save locally
-        index_map_path = temp_dir / "index_map.json"
-        with open(index_map_path, 'w', encoding='utf-8') as f:
-            json.dump(index_map, f, ensure_ascii=False, indent=2)
-
-        print(
-            f"Saved index map with {len(index_map)} entries to S3: s3://{s3_bucket}/{s3_index_key}")
+        print(f"Processed {len(index_map)} total chunks")
         return f"s3://{s3_bucket}/{s3_index_key}"
 
     except Exception as e:
-        print(f"Error listing files in S3: {str(e)}")
+        print(f"Error: {str(e)}")
         return None
 
 
 def select_model_for_chunk(token_count: int) -> str:
     """
-    Select the appropriate OpenAI embedding model based on document characteristics.
-
-    We'll use a simple strategy:
-    - Small texts (< 2000 tokens): text-embedding-3-small
-    - Medium & larger texts: text-embedding-ada-002 (more cost effective)
-    - For particularly important chunks: text-embedding-3-large
-
-    For simplicity, we'll use token count as the main factor.
+    Simple logic to always select Cohere for embedding
     """
-    if token_count < 2000:
-        return "small"  # text-embedding-3-small
-    else:
-        return "ada"  # text-embedding-ada-002 (more cost effective)
-
-    # Large model is available but more expensive - could be used for specialized cases
-    # return "large"  # text-embedding-3-large
+    return "claude"
 
 
 def generate_embedding(
     text: str,
     model_name: str,
-    openai_client: Any
+    openai_client: Any = None
 ) -> Optional[List[float]]:
-    """
-    Generate embedding for the given text using OpenAI's API.
-    """
     try:
-        response = openai_client.embeddings.create(
-            model=model_name,
-            input=text
+        # Initialize Bedrock client with specific configuration
+        bedrock = boto3.client(
+            service_name='bedrock-runtime',
+            region_name="us-east-2",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
         )
-        return response.data[0].embedding
+
+        print(f"Generating embedding for text of length: {len(text)}")
+
+        # Use Titan embedding model v2
+        response = bedrock.invoke_model(
+            modelId="amazon.titan-embed-text-v2:0",
+            body=json.dumps({
+                "inputText": text.strip()  # Ensure text is stripped of whitespace
+            }),
+            contentType="application/json",
+            accept="application/json"
+        )
+
+        response_body = json.loads(response['body'].read())
+        print("Successfully generated embedding")
+        return response_body['embedding']
 
     except Exception as e:
-        print(f"Error generating embedding with {model_name}: {str(e)}")
+        print(f"Error generating embedding: {str(e)}")
+        # Print first 5 chars for debugging
+        print(f"AWS Access Key ID: {os.getenv('AWS_ACCESS_KEY_ID')[:5]}...")
+        print(f"AWS Region: {os.getenv('AWS_REGION', 'us-east-2')}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
-# Example usage:
+# Run
 if __name__ == "__main__":
-    # Generate and store embeddings from text files in temp directory
     index_map_path = generate_and_store_embeddings()
-
-    print(
-        f"Embeddings generated and stored. Index map available at: {index_map_path}")
+    print(f"Embeddings complete. Index map saved at: {index_map_path}")
