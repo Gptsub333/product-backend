@@ -1,10 +1,10 @@
 [
   {
-    "chunk_id": "research_1743856909",
-    "text_s3_path": "s3://chatbot-automation-hackathon-team-parvez/final3/chatbot1/texts/research_1743856909.txt",
-    "embedding_s3_path": "s3://chatbot-automation-hackathon-team-parvez/final3/chatbot1/embeddings/embedding_data.json",
+    "chunk_id": "research_1744021883",
+    "text_s3_path": "s3://chatbot-automation-hackathon-team-parvez/user_2vJRMFrcOWr0Otq1hH9qgyvliO2/sample_1/texts/research_1744021883.txt",
+    "embedding_s3_path": "s3://chatbot-automation-hackathon-team-parvez/user_2vJRMFrcOWr0Otq1hH9qgyvliO2/sample_1/embeddings/research_1744021883/embedding_data.json",
     "model_used": "text-embedding-ada-002",
     "token_count": 4332,
-    "local_embedding_path": "D:\\hackathon\\newpull\\product-backend\\modules\\temp\\embeddings\\embedding_data.json"
+    "local_embedding_path": "D:\\hackathon\\newpull\\product-backend\\modules\\temp\\embeddings\\research_1744021883\\embedding_data.json"
   }
 ]
