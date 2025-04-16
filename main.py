@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from router.complete import router as complete_router
 from router.intent import router as intent_router
 from router.direct_chat import router as direct_chat_router
+from router.prompt_enhancer import router as prompt_enhancer_router
 import subprocess
 import sys
 from starlette.middleware.cors import CORSMiddleware
@@ -24,6 +25,7 @@ app.add_middleware(
 app.include_router(complete_router, prefix="/api/response")
 app.include_router(intent_router, prefix="/api/intent")
 app.include_router(direct_chat_router, prefix="/api/chat")
+app.include_router(prompt_enhancer_router, prefix="/api/enhance")
 
 
 @app.get("/")
