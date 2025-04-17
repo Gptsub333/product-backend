@@ -1,10 +1,9 @@
+import os
 from fastapi import FastAPI
 from router.complete import router as complete_router
 from router.intent import router as intent_router
 from router.direct_chat import router as direct_chat_router
 from router.prompt_enhancer import router as prompt_enhancer_router
-import subprocess
-import sys
 from starlette.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -38,3 +37,8 @@ async def root():
             "/api/chat - For direct paper-based QA"
         ]
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get('PORT', 8000))  # Default to 8000 if not set
+    uvicorn.run(app, host="0.0.0.0", port=port)
