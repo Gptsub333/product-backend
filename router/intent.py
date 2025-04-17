@@ -1,3 +1,5 @@
+from modules.embedding import generate_and_store_embeddings
+import io
 from fastapi import APIRouter, HTTPException, Form, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from typing import List, Optional
@@ -8,12 +10,12 @@ import os
 import uuid
 import subprocess
 import sys
-from dotenv import load_dotenv
-import io
-from modules.embedding import generate_and_store_embeddings
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 # Load environment variables
-load_dotenv()
+
 
 router = APIRouter()
 

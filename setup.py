@@ -11,7 +11,9 @@ import datetime
 import openai
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-from dotenv import load_dotenv
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 # Add the current directory to the Python path
 current_dir = Path(__file__).parent.absolute()
@@ -23,7 +25,6 @@ sys.path.append(str(current_dir))
 class ChatbotManager:
     def __init__(self):
         # Load environment variables
-        load_dotenv()
 
         # Get S3 configuration
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")

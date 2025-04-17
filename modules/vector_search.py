@@ -1,13 +1,13 @@
+import time
+from .text_chunking import TextChunker
 import boto3
 import json
 import numpy as np
 from typing import List, Dict, Optional
 import os
-from dotenv import load_dotenv
-from .text_chunking import TextChunker
-import time
-
-load_dotenv()
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
 class VectorSearch:

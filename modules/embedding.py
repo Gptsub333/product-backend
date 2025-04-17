@@ -1,11 +1,13 @@
+from .text_chunking import TextChunker
+from pathlib import Path
 import json
 import os
 import tiktoken
 import boto3
 from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
-from pathlib import Path
-from .text_chunking import TextChunker
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
 def generate_and_store_embeddings(
@@ -14,7 +16,6 @@ def generate_and_store_embeddings(
 ) -> str:
     """Generate embeddings for document chunks and store in S3"""
     # Load environment variables
-    load_dotenv()
 
     # Get S3 configuration
     s3_bucket = os.getenv("S3_BUCKET_NAME")

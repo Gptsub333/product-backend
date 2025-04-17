@@ -4,7 +4,9 @@ from typing import Optional, Union, List, Tuple
 from pathlib import Path
 import boto3
 import json
-from dotenv import load_dotenv
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
 class DocumentParser:
@@ -14,7 +16,6 @@ class DocumentParser:
         self.ocr_reader = None
 
         # Load environment variables
-        load_dotenv()
 
         # Get S3 configuration
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")

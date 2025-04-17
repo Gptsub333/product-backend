@@ -1,12 +1,14 @@
+from pathlib import Path
 import boto3
 import json
 import os
 import numpy as np
-from dotenv import load_dotenv
-from pathlib import Path
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 # Load environment variables
-load_dotenv()
+
 
 # Initialize S3 client
 s3_client = boto3.client(

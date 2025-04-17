@@ -1,13 +1,15 @@
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
 from typing import List
 import boto3
 import json
 import os
-from dotenv import load_dotenv
-from botocore.exceptions import ClientError
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
-load_dotenv()
+
 router = APIRouter()
 
 
